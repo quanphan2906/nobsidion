@@ -1,33 +1,11 @@
-import {
-	App,
-	Notice,
-	Plugin,
-	PluginSettingTab,
-	Setting,
-	TFile,
-} from "obsidian";
+import { App, Notice, Plugin, PluginManifest, TFile } from "obsidian";
+import * as yamlFrontMatter from "yaml-front-matter";
+import * as yaml from "yaml";
 import { Notion } from "src/notion";
 import { NoticeMConfig } from "src/messenger";
 import { addIcons } from "src/icon";
-
-// Define your PluginSettings interface
-interface PluginSettings {
-	notionAPI: string;
-	databaseID: string;
-	bannerUrl: string;
-	notionID: string;
-	allowTags: boolean;
-}
-
-type StringKeys<T> = Exclude<
-	{ [K in keyof T]: T[K] extends string ? K : never }[keyof T],
-	undefined
->;
-
-type BooleanKeys<T> = Exclude<
-	{ [K in keyof T]: T[K] extends boolean ? K : never }[keyof T],
-	undefined
->;
+import { PluginSettings } from "src/settings";
+import { SampleSettingTab } from "src/settings";
 
 // Define your default settings
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -45,10 +23,22 @@ const langConfig = NoticeMConfig(
 
 export default class ObsidianSyncNotionPlugin extends Plugin {
 	settings: PluginSettings;
+	notion: Notion;
+
+	constructor(app: App, manifest: PluginManifest) {
+		super(app, manifest);
+		this.settings = DEFAULT_SETTINGS;
+		this.notion = new Notion(this.settings);
+	}
 
 	// Plugin loading lifecycle method
 	async onload() {
-		await this.loadSettings();
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
+		this.notion = new Notion(this.settings);
 
 		addIcons();
 		this.addRibbonIcon(
@@ -83,20 +73,11 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 
 	onunload() {}
 
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
-	}
-
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
 
 	async uploadCurrentNote() {
-		// Check for Notion API and Database ID setup
 		if (!this.hasValidNotionCredentials()) {
 			new Notice(
 				"Please set up the Notion API and database ID in the settings tab."
@@ -104,27 +85,30 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			return;
 		}
 
-		// Get content of the current file
 		const currentFileContent = await this.getCurrentFileContent();
 		if (!currentFileContent) {
 			// Appropriate notice is already shown in getCurrentFileContent method
 			return;
 		}
 
-		const { markDownData, nowFile, tags } = currentFileContent;
-		const uploadResult = await this.uploadToNotion(
-			markDownData,
-			nowFile,
-			tags
+		const { markDownData: markdown, nowFile, tags } = currentFileContent;
+		const frontmatter =
+			this.app.metadataCache.getFileCache(nowFile)?.frontmatter;
+		const uploadResult = await this.notion.syncMarkdownToNotion(
+			nowFile.basename,
+			tags,
+			markdown,
+			frontmatter
 		);
 
-		// Display the result as a notice
+		if (uploadResult && uploadResult.status === 200) {
+			await this.updateYamlInfo(markdown, nowFile, uploadResult);
+		}
+
 		this.displayUploadResult(uploadResult, nowFile.basename);
 	}
 
-	// New method for bulk uploading
 	async bulkUpload() {
-		// Check for Notion API and Database ID setup
 		if (!this.hasValidNotionCredentials()) {
 			new Notice(
 				"Please set up the Notion API and database ID in the settings tab."
@@ -132,27 +116,42 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			return;
 		}
 
-		// Get all markdown files from the vault
-		const markdownFiles = this.app.vault.getMarkdownFiles();
+		// Create empty pages in Notion for all markdown files
+		// Add the notion links and ids to the properties of the obsidian page
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			console.log(file.name);
+			const title = file.basename;
+			const tags = this.getTags(file);
+			const res = await this.notion.createEmptyPage(title, tags);
 
-		// Iterate over all markdown files
-		for (const file of markdownFiles) {
-			const markDownData = await this.app.vault.read(file);
-			const tags = this.getTagsFromCurrentFile(file);
+			const content = await this.app.vault.read(file);
+			console.log("before even call updateYamlInfo", content);
+			if (res && res.status === 200) {
+				await this.updateYamlInfo(file, res);
+			} else {
+				new Notice(res?.text || "Failed to create page in Notion.");
+			}
+		}
 
-			if (markDownData) {
-				const uploadResult = await this.uploadToNotion(
-					markDownData,
-					file,
-					tags
+		// Second loop: Sync the content with converted hyperlinks
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const notionId = this.getNotionId(file);
+			const content = await this.app.vault.read(file);
+			// Convert Obsidian format into Markdown
+			const yamlObj = yamlFrontMatter.loadFront(content);
+			let processedContent = yamlObj.__content;
+			processedContent = this.convertObsidianLinks(processedContent);
+
+			if (content) {
+				const uploadResult = await this.notion.addContentToPage(
+					notionId,
+					processedContent
 				);
 
-				// Display the result as a notice
 				this.displayUploadResult(uploadResult, file.basename);
 			}
 		}
 
-		// Display a notice when all files have been processed
 		new Notice("All files have been processed for upload to Notion.");
 	}
 
@@ -169,7 +168,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		}
 
 		const markDownData = await this.app.vault.read(nowFile);
-		const tags = this.getTagsFromCurrentFile(nowFile);
+		const tags = this.getTags(nowFile);
 		return {
 			markDownData,
 			nowFile,
@@ -177,7 +176,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		};
 	}
 
-	getTagsFromCurrentFile(nowFile: TFile) {
+	getTags(nowFile: TFile): string[] {
 		const { allowTags } = this.settings;
 		if (allowTags) {
 			try {
@@ -187,20 +186,68 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 				);
 			} catch (error) {
 				new Notice(langConfig["set-tags-fail"]);
-				return [];
 			}
 		}
 		return [];
 	}
 
-	async uploadToNotion(markDownData: string, nowFile: TFile, tags: string[]) {
-		const upload = new Notion(this);
-		return await upload.syncMarkdownToNotion(
-			nowFile.basename,
-			tags,
-			markDownData,
-			nowFile
-		);
+	getNotionId(nowFile: TFile): string {
+		return this.app.metadataCache.getFileCache(nowFile)?.frontmatter
+			?.notionID;
+	}
+
+	convertObsidianLinks(markdown: string): string {
+		const obsidianLinkRegex = /\[\[([^\]]+)\]\]/g;
+
+		return markdown.replace(obsidianLinkRegex, (_, pageName) => {
+			// Get all markdown files from the vault
+			const markdownFiles = this.app.vault.getMarkdownFiles();
+
+			// Find the file with an exact match on the base name
+			const file = markdownFiles.find((f) => f.basename === pageName);
+			if (file) {
+				const notionPageUrl =
+					this.app.metadataCache.getFileCache(file)?.frontmatter
+						?.link;
+				return `[${pageName}](${notionPageUrl})`;
+			}
+
+			return pageName;
+		});
+	}
+
+	async updateYamlInfo(nowFile: TFile, res: any) {
+		const markdown = await this.app.vault.read(nowFile);
+		const yamlObj: any = yamlFrontMatter.loadFront(markdown);
+		let { url, id } = res.json;
+		const notionID = this.settings.notionID;
+
+		if (notionID !== "") {
+			url = url.replace("www.notion.so", `${notionID}.notion.site`);
+		}
+
+		yamlObj.link = url;
+		try {
+			await navigator.clipboard.writeText(url);
+		} catch (error) {
+			new Notice(`复制链接失败，请手动复制${error}`);
+		}
+
+		yamlObj.notionID = id;
+		const content = this.composeYamlContent(yamlObj);
+		try {
+			await nowFile.vault.modify(nowFile, content);
+		} catch (error) {
+			new Notice(`write file error ${error}`);
+		}
+	}
+
+	private composeYamlContent(yamlObj: any): string {
+		const __content = yamlObj.__content;
+		delete yamlObj.__content;
+		const yamlhead = yaml.stringify(yamlObj).replace(/\n$/, "");
+		const __content_remove_n = __content.replace(/^\n/, "");
+		return `---\n${yamlhead}\n---\n${__content_remove_n}`;
 	}
 
 	displayUploadResult(uploadResult: any, fileName: string) {
@@ -210,108 +257,5 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			const errorMessage = uploadResult?.text || langConfig["sync-fail"];
 			new Notice(`${errorMessage}${fileName}`, 5000);
 		}
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: ObsidianSyncNotionPlugin;
-
-	constructor(app: App, plugin: ObsidianSyncNotionPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const { containerEl } = this;
-
-		containerEl.empty();
-		containerEl.createEl("h2", {
-			text: "Settings for Obsidian to Notion plugin.",
-		});
-
-		this.createTextSetting(containerEl, {
-			name: "Notion API Token",
-			desc: "Your Notion integration API token.",
-			placeholder: "Enter your Notion API Token",
-			settingKey: "notionAPI",
-			isPassword: true,
-		});
-
-		this.createTextSetting(containerEl, {
-			name: "Database ID",
-			desc: "The ID of your Notion database.",
-			placeholder: "Enter your Database ID",
-			settingKey: "databaseID",
-			isPassword: false,
-		});
-
-		this.createTextSetting(containerEl, {
-			name: "Banner URL (optional)",
-			desc: "Page banner URL. If you want to show a banner, please enter the URL.",
-			placeholder: "Enter banner pic URL",
-			settingKey: "bannerUrl",
-			isPassword: false,
-		});
-
-		this.createTextSetting(containerEl, {
-			name: "Notion ID (optional)",
-			desc: "Your Notion ID for shared links. Format: https://username.notion.site/",
-			placeholder: "Enter Notion ID",
-			settingKey: "notionID",
-			isPassword: false,
-		});
-
-		this.createToggleSetting(containerEl, {
-			name: "Convert tags (optional)",
-			desc: "Transfer Obsidian tags to the Notion table. Requires a 'Tags' column in Notion.",
-			settingKey: "allowTags",
-		});
-	}
-
-	createTextSetting(
-		containerEl: HTMLElement,
-		options: {
-			name: string;
-			desc: string;
-			placeholder: string;
-			settingKey: StringKeys<PluginSettings>;
-			isPassword: boolean;
-		}
-	) {
-		new Setting(containerEl)
-			.setName(options.name)
-			.setDesc(options.desc)
-			.addText((text) => {
-				text.setPlaceholder(options.placeholder)
-					.setValue(this.plugin.settings[options.settingKey])
-					.onChange(async (value) => {
-						this.plugin.settings[options.settingKey] = value;
-						await this.plugin.saveSettings();
-					});
-				if (options.isPassword) {
-					text.inputEl.type = "password";
-				}
-			});
-	}
-
-	createToggleSetting(
-		containerEl: HTMLElement,
-		options: {
-			name: string;
-			desc: string;
-			settingKey: BooleanKeys<PluginSettings>;
-		}
-	) {
-		new Setting(containerEl)
-			.setName(options.name)
-			.setDesc(options.desc)
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings[options.settingKey])
-					.onChange(async (value) => {
-						this.plugin.settings[options.settingKey] = value;
-						await this.plugin.saveSettings();
-					});
-			});
 	}
 }
