@@ -1,134 +1,317 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import {
+	App,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	TFile,
+} from "obsidian";
+import { Notion } from "src/notion";
+import { NoticeMConfig } from "src/messenger";
+import { addIcons } from "src/icon";
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
+// Define your PluginSettings interface
+interface PluginSettings {
+	notionAPI: string;
+	databaseID: string;
+	bannerUrl: string;
+	notionID: string;
+	allowTags: boolean;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+type StringKeys<T> = Exclude<
+	{ [K in keyof T]: T[K] extends string ? K : never }[keyof T],
+	undefined
+>;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+type BooleanKeys<T> = Exclude<
+	{ [K in keyof T]: T[K] extends boolean ? K : never }[keyof T],
+	undefined
+>;
 
+// Define your default settings
+const DEFAULT_SETTINGS: PluginSettings = {
+	notionAPI: "",
+	databaseID: "",
+	bannerUrl: "",
+	notionID: "",
+	allowTags: false,
+};
+
+// Get language configuration for notices
+const langConfig = NoticeMConfig(
+	window.localStorage.getItem("language") || "en"
+);
+
+export default class ObsidianSyncNotionPlugin extends Plugin {
+	settings: PluginSettings;
+
+	// Plugin loading lifecycle method
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
+		addIcons();
+		this.addRibbonIcon(
+			"notion-logo",
+			"Share to notion",
+			async (evt: MouseEvent) => {
+				this.uploadCurrentNote();
 			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+		);
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
+		// Add a command that allows individual note upload
+		this.addCommand({
+			id: "share-to-notion",
+			name: "Share to Notion",
+			editorCallback: async () => {
+				this.uploadCurrentNote();
+			},
+		});
+
+		// Add a command for bulk upload
+		this.addCommand({
+			id: "bulk-share-to-notion",
+			name: "Upload vault to Notion",
+			callback: async () => {
+				this.bulkUpload();
+			},
 		});
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
-	onunload() {
-
-	}
+	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+	async uploadCurrentNote() {
+		// Check for Notion API and Database ID setup
+		if (!this.hasValidNotionCredentials()) {
+			new Notice(
+				"Please set up the Notion API and database ID in the settings tab."
+			);
+			return;
+		}
+
+		// Get content of the current file
+		const currentFileContent = await this.getCurrentFileContent();
+		if (!currentFileContent) {
+			// Appropriate notice is already shown in getCurrentFileContent method
+			return;
+		}
+
+		const { markDownData, nowFile, tags } = currentFileContent;
+		const uploadResult = await this.uploadToNotion(
+			markDownData,
+			nowFile,
+			tags
+		);
+
+		// Display the result as a notice
+		this.displayUploadResult(uploadResult, nowFile.basename);
 	}
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
+	// New method for bulk uploading
+	async bulkUpload() {
+		// Check for Notion API and Database ID setup
+		if (!this.hasValidNotionCredentials()) {
+			new Notice(
+				"Please set up the Notion API and database ID in the settings tab."
+			);
+			return;
+		}
+
+		// Get all markdown files from the vault
+		const markdownFiles = this.app.vault.getMarkdownFiles();
+
+		// Iterate over all markdown files
+		for (const file of markdownFiles) {
+			const markDownData = await this.app.vault.read(file);
+			const tags = this.getTagsFromCurrentFile(file);
+
+			if (markDownData) {
+				const uploadResult = await this.uploadToNotion(
+					markDownData,
+					file,
+					tags
+				);
+
+				// Display the result as a notice
+				this.displayUploadResult(uploadResult, file.basename);
+			}
+		}
+
+		// Display a notice when all files have been processed
+		new Notice("All files have been processed for upload to Notion.");
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	hasValidNotionCredentials() {
+		const { notionAPI, databaseID } = this.settings;
+		return notionAPI !== "" && databaseID !== "";
+	}
+
+	async getCurrentFileContent() {
+		const nowFile = this.app.workspace.getActiveFile();
+		if (!nowFile) {
+			new Notice(langConfig["open-file"]);
+			return null;
+		}
+
+		const markDownData = await this.app.vault.read(nowFile);
+		const tags = this.getTagsFromCurrentFile(nowFile);
+		return {
+			markDownData,
+			nowFile,
+			tags,
+		};
+	}
+
+	getTagsFromCurrentFile(nowFile: TFile) {
+		const { allowTags } = this.settings;
+		if (allowTags) {
+			try {
+				return (
+					this.app.metadataCache.getFileCache(nowFile)?.frontmatter
+						?.tags || []
+				);
+			} catch (error) {
+				new Notice(langConfig["set-tags-fail"]);
+				return [];
+			}
+		}
+		return [];
+	}
+
+	async uploadToNotion(markDownData: string, nowFile: TFile, tags: string[]) {
+		const upload = new Notion(this);
+		return await upload.syncMarkdownToNotion(
+			nowFile.basename,
+			tags,
+			markDownData,
+			nowFile
+		);
+	}
+
+	displayUploadResult(uploadResult: any, fileName: string) {
+		if (uploadResult && uploadResult.status === 200) {
+			new Notice(`${langConfig["sync-success"]}${fileName}`);
+		} else {
+			const errorMessage = uploadResult?.text || langConfig["sync-fail"];
+			new Notice(`${errorMessage}${fileName}`, 5000);
+		}
 	}
 }
 
 class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	plugin: ObsidianSyncNotionPlugin;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: ObsidianSyncNotionPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 
 		containerEl.empty();
+		containerEl.createEl("h2", {
+			text: "Settings for Obsidian to Notion plugin.",
+		});
 
+		this.createTextSetting(containerEl, {
+			name: "Notion API Token",
+			desc: "Your Notion integration API token.",
+			placeholder: "Enter your Notion API Token",
+			settingKey: "notionAPI",
+			isPassword: true,
+		});
+
+		this.createTextSetting(containerEl, {
+			name: "Database ID",
+			desc: "The ID of your Notion database.",
+			placeholder: "Enter your Database ID",
+			settingKey: "databaseID",
+			isPassword: false,
+		});
+
+		this.createTextSetting(containerEl, {
+			name: "Banner URL (optional)",
+			desc: "Page banner URL. If you want to show a banner, please enter the URL.",
+			placeholder: "Enter banner pic URL",
+			settingKey: "bannerUrl",
+			isPassword: false,
+		});
+
+		this.createTextSetting(containerEl, {
+			name: "Notion ID (optional)",
+			desc: "Your Notion ID for shared links. Format: https://username.notion.site/",
+			placeholder: "Enter Notion ID",
+			settingKey: "notionID",
+			isPassword: false,
+		});
+
+		this.createToggleSetting(containerEl, {
+			name: "Convert tags (optional)",
+			desc: "Transfer Obsidian tags to the Notion table. Requires a 'Tags' column in Notion.",
+			settingKey: "allowTags",
+		});
+	}
+
+	createTextSetting(
+		containerEl: HTMLElement,
+		options: {
+			name: string;
+			desc: string;
+			placeholder: string;
+			settingKey: StringKeys<PluginSettings>;
+			isPassword: boolean;
+		}
+	) {
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName(options.name)
+			.setDesc(options.desc)
+			.addText((text) => {
+				text.setPlaceholder(options.placeholder)
+					.setValue(this.plugin.settings[options.settingKey])
+					.onChange(async (value) => {
+						this.plugin.settings[options.settingKey] = value;
+						await this.plugin.saveSettings();
+					});
+				if (options.isPassword) {
+					text.inputEl.type = "password";
+				}
+			});
+	}
+
+	createToggleSetting(
+		containerEl: HTMLElement,
+		options: {
+			name: string;
+			desc: string;
+			settingKey: BooleanKeys<PluginSettings>;
+		}
+	) {
+		new Setting(containerEl)
+			.setName(options.name)
+			.setDesc(options.desc)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings[options.settingKey])
+					.onChange(async (value) => {
+						this.plugin.settings[options.settingKey] = value;
+						await this.plugin.saveSettings();
+					});
+			});
 	}
 }
