@@ -1,11 +1,11 @@
 import { App, Notice, Plugin, PluginManifest, TFile } from "obsidian";
 import * as yamlFrontMatter from "yaml-front-matter";
 import * as yaml from "yaml";
-import { Notion } from "src/notion";
-import { NoticeMConfig } from "src/messenger";
-import { addIcons } from "src/icon";
-import { PluginSettings } from "src/settings";
-import { SampleSettingTab } from "src/settings";
+import { Notion } from "lib/notion";
+import { NoticeMConfig } from "lib/messenger";
+import { addIcons } from "lib/icon";
+import { PluginSettings } from "lib/settings";
+import { SampleSettingTab } from "lib/settings";
 
 // Define your default settings
 const DEFAULT_SETTINGS: PluginSettings = {
