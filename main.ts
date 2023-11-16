@@ -137,6 +137,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			const notionId = this.getNotionId(file);
 			const content = await this.app.vault.read(file);
+
 			// Convert Obsidian format into Markdown
 			const yamlObj = yamlFrontMatter.loadFront(content);
 			let processedContent = yamlObj.__content;
