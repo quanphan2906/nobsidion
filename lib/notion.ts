@@ -1,6 +1,5 @@
-import { FrontMatterCache, Notice, requestUrl } from "obsidian";
+import { Notice, requestUrl } from "obsidian";
 import { markdownToBlocks } from "@tryfabric/martian";
-import * as yamlFrontMatter from "yaml-front-matter";
 import { PluginSettings } from "./settings";
 
 export class Notion {
@@ -8,84 +7,6 @@ export class Notion {
 
 	constructor(settings: PluginSettings) {
 		this.settings = settings;
-		// TODO: extract settings to bring settings here instead of bringing the entire plugin
-	}
-
-	async syncMarkdownToNotion(
-		title: string,
-		tags: string[],
-		markdown: string,
-		frontmatter: FrontMatterCache | undefined
-	): Promise<any> {
-		const yamlObj: any = yamlFrontMatter.loadFront(markdown);
-		const content = yamlObj.__content;
-		const file2Block = markdownToBlocks(content);
-		const notionID = frontmatter ? frontmatter.notionID : null;
-
-		if (notionID) {
-			await this.deletePage(notionID);
-		}
-
-		const res = await this.createPage(title, tags, file2Block);
-
-		return res;
-	}
-
-	async createPage(title: string, tags: string[], children: any) {
-		const databaseID = this.settings.databaseID;
-		const notionAPI = this.settings.notionAPI;
-		const bannerUrl = this.settings.bannerUrl || null; // Use null if bannerUrl is not set
-		const allowTags = this.settings.allowTags;
-
-		const bodyString: any = {
-			parent: {
-				database_id: databaseID,
-			},
-			properties: {
-				Name: {
-					title: [
-						{
-							text: {
-								content: title,
-							},
-						},
-					],
-				},
-				Tags: {
-					multi_select:
-						allowTags && tags
-							? tags.map((tag) => ({ name: tag }))
-							: [],
-				},
-			},
-			children,
-		};
-
-		if (bannerUrl) {
-			bodyString.cover = {
-				type: "external",
-				external: {
-					url: bannerUrl,
-				},
-			};
-		}
-
-		try {
-			const response = await requestUrl({
-				url: `https://api.notion.com/v1/pages`,
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${notionAPI}`,
-					"Notion-Version": "2021-08-16",
-				},
-				body: JSON.stringify(bodyString),
-			});
-			return response;
-		} catch (error) {
-			new Notice(`network error ${error}`);
-			// TODO: At least return something here to conform to the return type
-		}
 	}
 
 	async createEmptyPage(title: string, tags: string[]): Promise<any> {
@@ -159,17 +80,42 @@ export class Notion {
 		return res;
 	}
 
-	async deletePage(notionID: string) {
+	async clearPageContent(notionPageId: string): Promise<void> {
 		const notionAPI = this.settings.notionAPI;
-		const response = await requestUrl({
-			url: `https://api.notion.com/v1/blocks/${notionID}`,
-			method: "DELETE",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${notionAPI}`,
-				"Notion-Version": "2022-02-22",
-			},
-		});
-		return response;
+
+		try {
+			// Retrieve the list of block children for the given page ID
+			const listResponse = await requestUrl({
+				url: `https://api.notion.com/v1/blocks/${notionPageId}/children`,
+				method: "GET",
+				headers: {
+					Authorization: `Bearer ${notionAPI}`,
+					"Notion-Version": "2021-08-16",
+				},
+			});
+
+			// Check if the response contains blocks and delete them if it does
+			if (
+				listResponse &&
+				listResponse.json &&
+				listResponse.json.results
+			) {
+				for (const block of listResponse.json.results) {
+					// Each block has an ID, which you can use to delete it
+					await requestUrl({
+						url: `https://api.notion.com/v1/blocks/${block.id}`,
+						method: "DELETE",
+						headers: {
+							Authorization: `Bearer ${notionAPI}`,
+							"Notion-Version": "2021-08-16",
+						},
+					});
+				}
+				new Notice("All content cleared from the Notion page.");
+			}
+		} catch (error) {
+			console.error("Error clearing Notion page content:", error);
+			new Notice(`Error clearing content from Notion page: ${error}`);
+		}
 	}
 }
