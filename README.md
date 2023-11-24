@@ -14,7 +14,7 @@ Nobsidion is an Obsidian plugin designed to sync your Obsidian vault with your N
 -   [x] Support for multiple languages. Thanks to [EasyChris](https://github.com/EasyChris)
 -   [x] Mobile support. Thanks to [EasyChris](https://github.com/EasyChris)
 -   [x] Transfer Obsidian wiki-links into hyperlinks so Notion can parse.
--   [] Transfer Obsidian wiki-links into Notion's internal page mentions.
+-   [ ] Transfer Obsidian wiki-links into Notion's internal page mentions.
 
 ## Getting Started
 
