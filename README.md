@@ -2,6 +2,8 @@
 
 Nobsidion is an Obsidian plugin designed to sync your Obsidian vault with your Notion workspace. Building upon the [Obsidian to Notion](https://github.com/EasyChris/obsidian-to-notion/) plugin, Nobsidion offers additional functionality and refinements, making the syncing process more seamless and integrated.
 
+⚠️ This Obsidian plugin is not yet rigorously tested (I'm actively working on this) so it is not ready for production usage.
+
 ## Vision
 
 -   **Bi-directional Sync**: Keep your Obsidian notes and Notion pages in sync with changes reflected in both platforms.
