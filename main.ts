@@ -143,9 +143,6 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			contentWithFrontMatter.__content
 		);
 
-		console.log("notionPageId", notionPageId);
-		console.log("content", content);
-
 		await this.notion.clearPageContent(notionPageId);
 		const uploadResult = await this.notion.addContentToPage(
 			notionPageId,
