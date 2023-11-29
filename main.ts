@@ -29,10 +29,10 @@ import { SampleSettingTab } from "lib/settings";
 
 // Define your default settings
 const DEFAULT_SETTINGS: PluginSettings = {
-	notionAPI: "",
+	notionAPIToken: "",
 	databaseID: "",
 	bannerUrl: "",
-	notionID: "",
+	notionWorkspaceID: "",
 	allowTags: false,
 };
 
@@ -105,7 +105,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	async bulkUpload() {
 		if (!this.hasValidNotionCredentials()) {
 			new Notice(
-				"Please set up the Notion API and database ID in the settings tab."
+				"Please set up the Notion API token and database ID in the settings tab."
 			);
 			return;
 		}
@@ -119,8 +119,8 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	}
 
 	hasValidNotionCredentials() {
-		const { notionAPI, databaseID } = this.settings;
-		return notionAPI !== "" && databaseID !== "";
+		const { notionAPIToken, databaseID } = this.settings;
+		return notionAPIToken !== "" && databaseID !== "";
 	}
 
 	async uploadFile(file: TFile): Promise<void> {
@@ -129,19 +129,26 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		let tags = [];
 		if (this.settings.allowTags) tags = contentWithFrontMatter.tags;
 
-		if (!contentWithFrontMatter.notionID) {
-			await this.createEmptyNotionPage(file, file.basename, tags);
+		if (!contentWithFrontMatter.notionPageId) {
+			await this.createEmptyNotionPage(
+				file,
+				contentWithFrontMatter,
+				tags
+			);
 		}
 
 		contentWithFrontMatter = await this.getContent(file);
-		const notionPageID = contentWithFrontMatter.notionID;
+		const notionPageId = contentWithFrontMatter.notionPageId;
 		const content = await this.convertObsidianLinks(
 			contentWithFrontMatter.__content
 		);
 
-		await this.notion.clearPageContent(notionPageID);
+		console.log("notionPageId", notionPageId);
+		console.log("content", content);
+
+		await this.notion.clearPageContent(notionPageId);
 		const uploadResult = await this.notion.addContentToPage(
-			notionPageID,
+			notionPageId,
 			content
 		);
 
@@ -156,11 +163,45 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 
 	async createEmptyNotionPage(
 		file: TFile,
-		pageName: string,
+		contentWithFrontMatter: any,
 		tags: string[] = []
 	) {
-		const res = await this.notion.createEmptyPage(pageName, tags);
-		await this.updateYamlInfo(file, res);
+		// Use notion API to create empty page on notion
+		const res = await this.notion.createEmptyPage(file.basename, tags);
+
+		// Retrieve and add notion page URL and page id to the page's properties
+		const { url: notionPageUrl, id: notionPageId } = res.json;
+
+		// Reformat the notion page url to expose the workspace id
+		// and add the Notion page URL and ID to the front matter of the Obsidian file.
+		const notionWorkspaceID = this.settings.notionWorkspaceID;
+		contentWithFrontMatter.notionPageUrl = notionPageUrl;
+		if (notionWorkspaceID !== "") {
+			contentWithFrontMatter.notionPageUrl = notionPageUrl.replace(
+				"www.notion.so",
+				`${notionWorkspaceID}.notion.site`
+			);
+		}
+
+		contentWithFrontMatter.notionPageId = notionPageId;
+
+		// Prepare the content for updating the Obsidian file. This involves:
+		// - Extracting the main content (removing the YAML front matter).
+		// - Converting the YAML front matter into a string.
+		// - Removing any trailing newline from the YAML string.
+		// - Ensuring there's no leading newline in the main content.
+		const { __content: mainContent, ...frontMatter } =
+			contentWithFrontMatter;
+		const yamlhead = yaml.stringify(frontMatter).replace(/\n$/, "");
+		const __content_remove_n = mainContent.replace(/^\n/, "");
+		const processedMarkdown = `---\n${yamlhead}\n---\n${__content_remove_n}`;
+
+		// Update the Obsidian file with the new content, which now includes the Notion page link.
+		try {
+			await file.vault.modify(file, processedMarkdown);
+		} catch (error) {
+			new Notice(`write file error ${error}`);
+		}
 	}
 
 	async createEmptyMarkdownFile(pageName: string): Promise<TFile> {
@@ -169,6 +210,18 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		return newFile;
 	}
 
+	/**
+	 * Convert Obsidian wiki-link into hyperlink.
+	 *
+	 * The hyperlink will have the same name as the wiki-link, but it will link
+	 * to the corresponding Notion page.
+	 *
+	 * We parse wiki-link into hyperlink because Notion doesn't understand wiki-link
+	 * and we haven't built a parser from wiki-link to Notion internal page mention.
+	 *
+	 * @param markdown Original markdown content of an Obsidian markdown file
+	 * @returns Same markdown content, with wiki-link turned into hyperlink.
+	 */
 	async convertObsidianLinks(markdown: string): Promise<string> {
 		const obsidianLinkRegex = /\[\[([^\]]+)\]\]/g;
 		let updatedMarkdown = markdown;
@@ -196,12 +249,12 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			// If file exists but doesn't have a corresponding notion page
 			// create an empty notion page
 			let contentWithFrontMatter: any = await this.getContent(file);
-			if (!contentWithFrontMatter.link) {
-				await this.createEmptyNotionPage(file, file.basename);
+			if (!contentWithFrontMatter.notionPageUrl) {
+				await this.createEmptyNotionPage(file, contentWithFrontMatter);
 			}
 
 			contentWithFrontMatter = await this.getContent(file);
-			const notionPageUrl = contentWithFrontMatter.link;
+			const notionPageUrl = contentWithFrontMatter.notionPageUrl;
 
 			updatedMarkdown = updatedMarkdown.replace(
 				new RegExp(
@@ -216,40 +269,6 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		}
 
 		return updatedMarkdown;
-	}
-
-	async updateYamlInfo(nowFile: TFile, res: any) {
-		const markdown = await this.app.vault.read(nowFile);
-		const yamlObj: any = yamlFrontMatter.loadFront(markdown);
-		let { url, id } = res.json;
-		const notionID = this.settings.notionID;
-
-		if (notionID !== "") {
-			url = url.replace("www.notion.so", `${notionID}.notion.site`);
-		}
-
-		yamlObj.link = url;
-		try {
-			await navigator.clipboard.writeText(url);
-		} catch (error) {
-			new Notice(`复制链接失败，请手动复制${error}`);
-		}
-
-		yamlObj.notionID = id;
-		const content = this.composeYamlContent(yamlObj);
-		try {
-			await nowFile.vault.modify(nowFile, content);
-		} catch (error) {
-			new Notice(`write file error ${error}`);
-		}
-	}
-
-	private composeYamlContent(yamlObj: any): string {
-		const __content = yamlObj.__content;
-		delete yamlObj.__content;
-		const yamlhead = yaml.stringify(yamlObj).replace(/\n$/, "");
-		const __content_remove_n = __content.replace(/^\n/, "");
-		return `---\n${yamlhead}\n---\n${__content_remove_n}`;
 	}
 
 	displayUploadResult(uploadResult: any, fileName: string) {

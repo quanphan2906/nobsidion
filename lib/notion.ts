@@ -32,7 +32,8 @@ export class Notion {
 
 	async createEmptyPage(title: string, tags: string[]): Promise<any> {
 		let res = null;
-		const { databaseID, notionAPI, allowTags, bannerUrl } = this.settings;
+		const { databaseID, notionAPIToken, allowTags, bannerUrl } =
+			this.settings;
 
 		const bodyString: any = {
 			parent: { database_id: databaseID },
@@ -62,7 +63,7 @@ export class Notion {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${notionAPI}`,
+					Authorization: `Bearer ${notionAPIToken}`,
 					"Notion-Version": "2021-08-16",
 				},
 				body: JSON.stringify(bodyString),
@@ -89,7 +90,7 @@ export class Notion {
 				method: "PATCH",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${this.settings.notionAPI}`,
+					Authorization: `Bearer ${this.settings.notionAPIToken}`,
 					"Notion-Version": "2021-08-16",
 				},
 				body: JSON.stringify({ children: blocks }),
@@ -102,7 +103,7 @@ export class Notion {
 	}
 
 	async clearPageContent(notionPageId: string): Promise<void> {
-		const notionAPI = this.settings.notionAPI;
+		const notionAPIToken = this.settings.notionAPIToken;
 
 		try {
 			// Retrieve the list of block children for the given page ID
@@ -110,7 +111,7 @@ export class Notion {
 				url: `https://api.notion.com/v1/blocks/${notionPageId}/children`,
 				method: "GET",
 				headers: {
-					Authorization: `Bearer ${notionAPI}`,
+					Authorization: `Bearer ${notionAPIToken}`,
 					"Notion-Version": "2021-08-16",
 				},
 			});
@@ -127,7 +128,7 @@ export class Notion {
 						url: `https://api.notion.com/v1/blocks/${block.id}`,
 						method: "DELETE",
 						headers: {
-							Authorization: `Bearer ${notionAPI}`,
+							Authorization: `Bearer ${notionAPIToken}`,
 							"Notion-Version": "2021-08-16",
 						},
 					});

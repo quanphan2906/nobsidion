@@ -23,10 +23,10 @@ import { PluginSettingTab, Setting, App } from "obsidian";
 import ObsidianSyncNotionPlugin from "main";
 
 export interface PluginSettings {
-	notionAPI: string;
+	notionAPIToken: string;
 	databaseID: string;
 	bannerUrl: string;
-	notionID: string;
+	notionWorkspaceID: string;
 	allowTags: boolean;
 }
 
@@ -60,7 +60,7 @@ export class SampleSettingTab extends PluginSettingTab {
 			name: "Notion API Token",
 			desc: "Your Notion integration API token.",
 			placeholder: "Enter your Notion API Token",
-			settingKey: "notionAPI",
+			settingKey: "notionAPIToken",
 			isPassword: true,
 		});
 
@@ -81,10 +81,10 @@ export class SampleSettingTab extends PluginSettingTab {
 		});
 
 		this.createTextSetting(containerEl, {
-			name: "Notion ID (optional)",
-			desc: "Your Notion ID for shared links. Format: https://username.notion.site/",
+			name: "Notion Workspace ID (optional)",
+			desc: "Your Notion Workspace ID. The plugin uses this to format the notion share link. Format: https://username.notion.site/",
 			placeholder: "Enter Notion ID",
-			settingKey: "notionID",
+			settingKey: "notionWorkspaceID",
 			isPassword: false,
 		});
 
