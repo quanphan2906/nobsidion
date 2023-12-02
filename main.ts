@@ -21,11 +21,15 @@
 
 import { App, Notice, Plugin, PluginManifest, TFile } from "obsidian";
 import * as yamlFrontMatter from "yaml-front-matter";
-import * as yaml from "yaml";
-import { Notion } from "lib/notion";
-import { NoticeMConfig } from "lib/messenger";
+import notion from "lib/notion";
 import { PluginSettings } from "lib/settings";
 import { SampleSettingTab } from "lib/settings";
+import {
+	NoticeMessageConfig,
+	getWikiLinkFromMarkdown,
+	prepareNotionPageAndUpdateMarkdown,
+	replaceWikiWithHyperLink,
+} from "lib/helper";
 
 // Define your default settings
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -36,19 +40,16 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	allowTags: false,
 };
 
-// Get language configuration for notices
-const langConfig = NoticeMConfig(
-	window.localStorage.getItem("language") || "en"
-);
-
 export default class ObsidianSyncNotionPlugin extends Plugin {
 	settings: PluginSettings;
-	notion: Notion;
+	message: { [key: string]: string };
 
 	constructor(app: App, manifest: PluginManifest) {
 		super(app, manifest);
 		this.settings = DEFAULT_SETTINGS;
-		this.notion = new Notion(this.settings);
+		this.message = NoticeMessageConfig(
+			window.localStorage.getItem("language") || "en"
+		);
 	}
 
 	async onload() {
@@ -57,7 +58,6 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			DEFAULT_SETTINGS,
 			await this.loadData()
 		);
-		this.notion = new Notion(this.settings);
 
 		this.addCommand({
 			id: "share-to-notion",
@@ -87,15 +87,13 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 
 	async uploadCurrentNote() {
 		if (!this.hasValidNotionCredentials()) {
-			new Notice(
-				"Please set up the Notion API and database ID in the settings tab."
-			);
+			new Notice(this.message["config-settings"]);
 			return;
 		}
 
 		const nowFile = this.app.workspace.getActiveFile();
 		if (!nowFile) {
-			new Notice(langConfig["open-file"]);
+			new Notice(this.message["open-file"]);
 			return null;
 		}
 
@@ -104,9 +102,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 
 	async bulkUpload() {
 		if (!this.hasValidNotionCredentials()) {
-			new Notice(
-				"Please set up the Notion API token and database ID in the settings tab."
-			);
+			new Notice(this.message["config-settings"]);
 			return;
 		}
 
@@ -115,7 +111,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			this.uploadFile(file);
 		}
 
-		new Notice("All files have been processed for upload to Notion.");
+		new Notice(this.message["all-sync-success"]);
 	}
 
 	hasValidNotionCredentials() {
@@ -124,32 +120,51 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	}
 
 	async uploadFile(file: TFile): Promise<void> {
-		let contentWithFrontMatter: any = await this.getContent(file);
+		const contentWithFrontMatter = this.initializeNotionPage(file);
+		const uploadResult = await this.uploadContentToNotion(
+			contentWithFrontMatter
+		);
 
-		let tags = [];
-		if (this.settings.allowTags) tags = contentWithFrontMatter.tags;
+		// display result
+		if (uploadResult && uploadResult.status === 200) {
+			new Notice(`${this.message["sync-success"]}${file.basename}`);
+		} else {
+			const errorMessage =
+				uploadResult?.text || this.message["sync-fail"];
+			new Notice(`${errorMessage}${file.basename}`, 5000);
+		}
+	}
+
+	async initializeNotionPage(file: TFile): Promise<any> {
+		const contentWithFrontMatter = await this.getContent(file);
 
 		if (!contentWithFrontMatter.notionPageId) {
-			await this.createEmptyNotionPage(
-				file,
+			// contentWithFrontMatter will be updated with notionPageId and notionPageUrl
+			// not the best practice to modify an argument object in a function
+			// but will get back to that later
+			const processedMarkdown = await prepareNotionPageAndUpdateMarkdown(
+				this.settings,
 				contentWithFrontMatter,
-				tags
+				file.basename
 			);
+
+			this.updateMarkdownFile(file, processedMarkdown);
 		}
 
-		contentWithFrontMatter = await this.getContent(file);
-		const notionPageId = contentWithFrontMatter.notionPageId;
+		return contentWithFrontMatter;
+	}
+
+	async uploadContentToNotion(contentWithFrontMatter: any): Promise<any> {
 		const content = await this.convertObsidianLinks(
 			contentWithFrontMatter.__content
 		);
-
-		await this.notion.clearPageContent(notionPageId);
-		const uploadResult = await this.notion.addContentToPage(
-			notionPageId,
+		const uploadResult = await notion.uploadFileContent(
+			this.settings,
+			contentWithFrontMatter.notionPageId,
 			content
 		);
 
-		this.displayUploadResult(uploadResult, file.basename);
+		return uploadResult;
 	}
 
 	async getContent(file: TFile): Promise<any> {
@@ -158,53 +173,14 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		return contentWithFrontMatter;
 	}
 
-	async createEmptyNotionPage(
-		file: TFile,
-		contentWithFrontMatter: any,
-		tags: string[] = []
-	) {
-		// Use notion API to create empty page on notion
-		const res = await this.notion.createEmptyPage(file.basename, tags);
-
-		// Retrieve and add notion page URL and page id to the page's properties
-		const { url: notionPageUrl, id: notionPageId } = res.json;
-
-		// Reformat the notion page url to expose the workspace id
-		// and add the Notion page URL and ID to the front matter of the Obsidian file.
-		const notionWorkspaceID = this.settings.notionWorkspaceID;
-		contentWithFrontMatter.notionPageUrl = notionPageUrl;
-		if (notionWorkspaceID !== "") {
-			contentWithFrontMatter.notionPageUrl = notionPageUrl.replace(
-				"www.notion.so",
-				`${notionWorkspaceID}.notion.site`
-			);
-		}
-
-		contentWithFrontMatter.notionPageId = notionPageId;
-
-		// Prepare the content for updating the Obsidian file. This involves:
-		// - Extracting the main content (removing the YAML front matter).
-		// - Converting the YAML front matter into a string.
-		// - Removing any trailing newline from the YAML string.
-		// - Ensuring there's no leading newline in the main content.
-		const { __content: mainContent, ...frontMatter } =
-			contentWithFrontMatter;
-		const yamlhead = yaml.stringify(frontMatter).replace(/\n$/, "");
-		const __content_remove_n = mainContent.replace(/^\n/, "");
-		const processedMarkdown = `---\n${yamlhead}\n---\n${__content_remove_n}`;
-
-		// Update the Obsidian file with the new content, which now includes the Notion page link.
-		try {
-			await file.vault.modify(file, processedMarkdown);
-		} catch (error) {
-			new Notice(`write file error ${error}`);
-		}
-	}
-
 	async createEmptyMarkdownFile(pageName: string): Promise<TFile> {
 		const newFilePath = `/${pageName}.md`;
 		const newFile = await this.app.vault.create(newFilePath, "");
 		return newFile;
+	}
+
+	async updateMarkdownFile(file: TFile, newContent: string): Promise<void> {
+		await file.vault.modify(file, newContent);
 	}
 
 	/**
@@ -220,60 +196,32 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	 * @returns Same markdown content, with wiki-link turned into hyperlink.
 	 */
 	async convertObsidianLinks(markdown: string): Promise<string> {
-		const obsidianLinkRegex = /\[\[([^\]]+)\]\]/g;
-		let updatedMarkdown = markdown;
+		const links = getWikiLinkFromMarkdown(markdown);
 		const markdownFiles = this.app.vault.getMarkdownFiles();
-
-		// Find all unique Obsidian links in the markdown
-		const links = new Set<string>();
-		let match;
-		while ((match = obsidianLinkRegex.exec(markdown)) !== null) {
-			links.add(match[1]);
-		}
+		let updatedMarkdown = markdown;
 
 		for (const pageName of links) {
 			let file = markdownFiles.find((f) => f.basename === pageName);
 
 			// if file doesn't exist, create it
-			if (!file) {
-				file = await this.createEmptyMarkdownFile(pageName);
-			}
-
-			if (!file) {
-				continue;
-			}
+			if (!file) file = await this.createEmptyMarkdownFile(pageName);
+			if (!file) continue;
 
 			// If file exists but doesn't have a corresponding notion page
 			// create an empty notion page
-			let contentWithFrontMatter: any = await this.getContent(file);
-			if (!contentWithFrontMatter.notionPageUrl) {
-				await this.createEmptyNotionPage(file, contentWithFrontMatter);
-			}
-
-			contentWithFrontMatter = await this.getContent(file);
+			const contentWithFrontMatter = await this.initializeNotionPage(
+				file
+			);
 			const notionPageUrl = contentWithFrontMatter.notionPageUrl;
 
-			updatedMarkdown = updatedMarkdown.replace(
-				new RegExp(
-					`\\[\\[${pageName.replace(
-						/[.*+?^${}()|[\]\\]/g,
-						"\\$&"
-					)}\\]\\]`,
-					"g"
-				),
-				`[${pageName}](${notionPageUrl})`
+			updatedMarkdown = replaceWikiWithHyperLink(
+				updatedMarkdown,
+				pageName,
+				pageName,
+				notionPageUrl
 			);
 		}
 
 		return updatedMarkdown;
-	}
-
-	displayUploadResult(uploadResult: any, fileName: string) {
-		if (uploadResult && uploadResult.status === 200) {
-			new Notice(`${langConfig["sync-success"]}${fileName}`);
-		} else {
-			const errorMessage = uploadResult?.text || langConfig["sync-fail"];
-			new Notice(`${errorMessage}${fileName}`, 5000);
-		}
 	}
 }

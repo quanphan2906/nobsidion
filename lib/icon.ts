@@ -19,9 +19,7 @@
     along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { addIcon } from "obsidian";
-
-const icons: { [key: string]: string } = {
+export const icons: { [key: string]: string } = {
 	"notion-logo": `
         <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100px" height="100px" viewBox="0 0 100 100" version="1.1">
             <g id="surface1">
@@ -29,10 +27,4 @@ const icons: { [key: string]: string } = {
             </g>
         </svg>
     `,
-};
-
-export const addIcons = (): void => {
-	Object.keys(icons).forEach((key) => {
-		addIcon(key, icons[key]);
-	});
 };
