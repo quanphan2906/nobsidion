@@ -1,5 +1,5 @@
 /*
-    Created by Quan Phan (2023)
+    Created by Quan Phan (2023). Reused functions from EasyChris (2022).
 
     This file is part of Nobsidion and is licensed under the GNU General Public License v3.0.
     Modifications include <brief description of modifications>.
@@ -22,8 +22,6 @@ import * as yaml from "yaml";
 import { TFile, addIcon } from "obsidian";
 import { NoticeMsg } from "./message";
 import { icons } from "./icon";
-import { PluginSettings } from "./settings";
-import notion from "./notion";
 
 /**
  *
@@ -84,24 +82,6 @@ export const updateNotionPageUrlWithWorkspaceId = (
 		"www.notion.so",
 		`${notionWorkspaceId}.notion.site`
 	);
-};
-
-export const prepareNotionPageAndUpdateMarkdown = async (
-	settings: PluginSettings,
-	contentWithFrontMatter: any,
-	fileName: string
-): Promise<string> => {
-	const { url: rawNotionPageUrl, id: notionPageId } =
-		await notion.createEmptyPage(settings, fileName);
-	const notionPageUrl = updateNotionPageUrlWithWorkspaceId(
-		rawNotionPageUrl,
-		settings.notionWorkspaceID
-	);
-
-	contentWithFrontMatter.notionPageId = notionPageId;
-	contentWithFrontMatter.notionPageUrl = notionPageUrl;
-
-	return fromYamlFrontMatterToMarkdown(contentWithFrontMatter);
 };
 
 export const getWikiLinkFromMarkdown = (markdown: string): Set<string> => {

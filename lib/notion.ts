@@ -21,14 +21,15 @@
 
 import { Notice, requestUrl } from "obsidian";
 import { markdownToBlocks } from "@tryfabric/martian";
-import { PluginSettings } from "./settings";
+import { PluginSettings, ServiceResult } from "./types";
 
 const createEmptyPage = async (
 	settings: PluginSettings,
 	title: string,
 	tags: string[] = []
-): Promise<any> => {
+): Promise<ServiceResult> => {
 	let res = null;
+
 	const { databaseID, notionAPIToken, allowTags, bannerUrl } = settings;
 
 	const bodyString: any = {
@@ -62,25 +63,25 @@ const createEmptyPage = async (
 			},
 			body: JSON.stringify(bodyString),
 		});
+
+		return { data: res.json, error: null };
 	} catch (error) {
 		new Notice(`network error ${error}`);
+		return { data: res, error };
 	}
-
-	return res;
 };
 
 const addContentToPage = async (
 	settings: PluginSettings,
 	notionPageId: string,
 	content: string
-): Promise<any> => {
+): Promise<ServiceResult> => {
 	let res = null;
 	const notionAPIToken = settings.notionAPIToken;
 
 	const blocks = markdownToBlocks(content);
 
 	try {
-		// Add the content blocks to the Notion page
 		res = await requestUrl({
 			url: `https://api.notion.com/v1/blocks/${notionPageId}/children`,
 			method: "PATCH",
@@ -91,17 +92,17 @@ const addContentToPage = async (
 			},
 			body: JSON.stringify({ children: blocks }),
 		});
+		return { data: res.json, error: null };
 	} catch (error) {
 		new Notice(`Error adding content to Notion page: ${error}`);
+		return { data: res, error };
 	}
-
-	return res;
 };
 
 const clearPageContent = async (
 	settings: PluginSettings,
 	notionPageId: string
-): Promise<void> => {
+): Promise<ServiceResult> => {
 	const notionAPIToken = settings.notionAPIToken;
 
 	try {
@@ -130,9 +131,12 @@ const clearPageContent = async (
 			}
 			new Notice("All content cleared from the Notion page.");
 		}
+
+		return { data: "Delete succeed", error: null };
 	} catch (error) {
 		console.error("Error clearing Notion page content:", error);
 		new Notice(`Error clearing content from Notion page: ${error}`);
+		return { data: null, error };
 	}
 };
 
@@ -140,8 +144,12 @@ const uploadFileContent = async (
 	settings: PluginSettings,
 	notionPageId: string,
 	content: string
-): Promise<any> => {
-	await clearPageContent(settings, notionPageId);
+): Promise<ServiceResult> => {
+	const { error } = await clearPageContent(settings, notionPageId);
+	if (error) {
+		return { data: null, error };
+	}
+
 	const uploadResult = await addContentToPage(
 		settings,
 		notionPageId,
@@ -154,8 +162,6 @@ const uploadFileContent = async (
 const notion = {
 	createEmptyPage,
 	uploadFileContent,
-	clearPageContent,
-	addContentToPage,
 };
 
 export default notion;

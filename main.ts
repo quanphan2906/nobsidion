@@ -21,16 +21,14 @@
 
 import { App, Notice, Plugin, PluginManifest, TFile } from "obsidian";
 import * as yamlFrontMatter from "yaml-front-matter";
-import notion from "lib/notion";
-import { PluginSettings } from "lib/settings";
-import { SampleSettingTab } from "lib/settings";
 import {
-	NoticeMessageConfig,
-	getWikiLinkFromMarkdown,
-	prepareNotionPageAndUpdateMarkdown,
-	replaceWikiWithHyperLink,
-	getBasenameFromPath,
-} from "lib/helper";
+	PluginSettings,
+	MarkdownWithFrontMatter,
+	ServiceResult,
+} from "lib/types";
+import { NobsidionSettingTab } from "lib/nobsidionSettingsTab";
+import { NoticeMessageConfig, getBasenameFromPath } from "lib/helper";
+import { uploadFile } from "lib";
 
 // Define your default settings
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -75,7 +73,11 @@ export default class Nobsidion extends Plugin {
 		this.registerCustomEvents();
 
 		// Add settings tab to plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new NobsidionSettingTab(this.app, this));
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 
 	addCustomCommands() {
@@ -124,10 +126,6 @@ export default class Nobsidion extends Plugin {
 		);
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-
 	async uploadCurrentNote() {
 		if (!this.hasValidNotionCredentials()) {
 			new Notice(this.message["config-settings"]);
@@ -163,54 +161,11 @@ export default class Nobsidion extends Plugin {
 	}
 
 	async uploadFile(file: TFile): Promise<void> {
-		const contentWithFrontMatter = this.initializeNotionPage(file);
-		const uploadResult = await this.uploadContentToNotion(
-			contentWithFrontMatter
-		);
-
-		// display result
-		if (uploadResult && uploadResult.status === 200) {
-			new Notice(`${this.message["sync-success"]}${file.basename}`);
-		} else {
-			const errorMessage =
-				uploadResult?.text || this.message["sync-fail"];
-			new Notice(`${errorMessage}${file.basename}`, 5000);
-		}
+		const uploadResult = await uploadFile(this, file);
+		this.displayResult(uploadResult, file.basename);
 	}
 
-	async initializeNotionPage(file: TFile): Promise<any> {
-		const contentWithFrontMatter = await this.getContent(file);
-
-		if (!contentWithFrontMatter.notionPageId) {
-			// contentWithFrontMatter will be updated with notionPageId and notionPageUrl
-			// not the best practice to modify an argument object in a function
-			// but will get back to that later
-			const processedMarkdown = await prepareNotionPageAndUpdateMarkdown(
-				this.settings,
-				contentWithFrontMatter,
-				file.basename
-			);
-
-			this.updateMarkdownFile(file, processedMarkdown);
-		}
-
-		return contentWithFrontMatter;
-	}
-
-	async uploadContentToNotion(contentWithFrontMatter: any): Promise<any> {
-		const content = await this.convertObsidianLinks(
-			contentWithFrontMatter.__content
-		);
-		const uploadResult = await notion.uploadFileContent(
-			this.settings,
-			contentWithFrontMatter.notionPageId,
-			content
-		);
-
-		return uploadResult;
-	}
-
-	async getContent(file: TFile): Promise<any> {
+	async getContent(file: TFile): Promise<MarkdownWithFrontMatter> {
 		const content = await this.app.vault.read(file);
 		const contentWithFrontMatter = yamlFrontMatter.loadFront(content);
 		return contentWithFrontMatter;
@@ -228,54 +183,13 @@ export default class Nobsidion extends Plugin {
 		await file.vault.modify(file, newContent);
 	}
 
-	/**
-	 * Convert Obsidian wiki-link into hyperlink.
-	 *
-	 * The hyperlink will have the same name as the wiki-link, but it will link
-	 * to the corresponding Notion page.
-	 *
-	 * We parse wiki-link into hyperlink because Notion doesn't understand wiki-link
-	 * and we haven't built a parser from wiki-link to Notion internal page mention.
-	 *
-	 * @param markdown Original markdown content of an Obsidian markdown file
-	 * @returns Same markdown content, with wiki-link turned into hyperlink.
-	 *
-	 * 1. Retrieve all the wiki links from markdown
-	 * 2. See which wiki-link doesn't exist --> wikiLinkNotExist
-	 * 3. Create markdown files from all the links in wikiLinkNotExist
-	 * 4. Init notion page for all pages
-	 * 5.
-	 */
-	async convertObsidianLinks(markdown: string): Promise<string> {
-		const links = getWikiLinkFromMarkdown(markdown);
-		let updatedMarkdown = markdown;
-
-		for (const pageName of links) {
-			let file: TFile | undefined;
-
-			if (pageName in this.fileNameToFile) {
-				file = this.fileNameToFile.get(pageName);
-			}
-
-			// if file doesn't exist, create it
-			if (!file) file = await this.createEmptyMarkdownFile(pageName);
-			if (!file) continue;
-
-			// If file exists but doesn't have a corresponding notion page
-			// create an empty notion page
-			const contentWithFrontMatter = await this.initializeNotionPage(
-				file
-			);
-			const notionPageUrl = contentWithFrontMatter.notionPageUrl;
-
-			updatedMarkdown = replaceWikiWithHyperLink(
-				updatedMarkdown,
-				pageName,
-				pageName,
-				notionPageUrl
-			);
+	displayResult(uploadResult: ServiceResult, pageName: string) {
+		if (uploadResult.error) {
+			const errorMessage = uploadResult.error.message;
+			new Notice(`${errorMessage}${pageName}`, 5000);
+			return;
 		}
 
-		return updatedMarkdown;
+		new Notice(`${this.message["sync-success"]}${pageName}`);
 	}
 }

@@ -1,6 +1,6 @@
 /*
     Originally created by EasyChris (2022) in main.ts
-    Extracted to settings.ts and modified by Quan Phan (2023)
+    Extracted to nobsidionSettingTab.ts and modified by Quan Phan (2023)
 
     This file is part of Nobsidion and is licensed under the GNU General Public License v3.0.
     Modifications include <brief description of modifications>.
@@ -20,30 +20,13 @@
 */
 
 import { PluginSettingTab, Setting, App } from "obsidian";
-import ObsidianSyncNotionPlugin from "main";
+import Nobsidion from "main";
+import { PluginSettings, StringKeys, BooleanKeys } from "./types";
 
-export interface PluginSettings {
-	notionAPIToken: string;
-	databaseID: string;
-	bannerUrl: string;
-	notionWorkspaceID: string;
-	allowTags: boolean;
-}
+export class NobsidionSettingTab extends PluginSettingTab {
+	plugin: Nobsidion;
 
-type StringKeys<T> = Exclude<
-	{ [K in keyof T]: T[K] extends string ? K : never }[keyof T],
-	undefined
->;
-
-type BooleanKeys<T> = Exclude<
-	{ [K in keyof T]: T[K] extends boolean ? K : never }[keyof T],
-	undefined
->;
-
-export class SampleSettingTab extends PluginSettingTab {
-	plugin: ObsidianSyncNotionPlugin;
-
-	constructor(app: App, plugin: ObsidianSyncNotionPlugin) {
+	constructor(app: App, plugin: Nobsidion) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
