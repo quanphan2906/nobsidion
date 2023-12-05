@@ -19,7 +19,7 @@
     along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Notice, requestUrl } from "obsidian";
+import { requestUrl } from "obsidian";
 import { markdownToBlocks } from "@tryfabric/martian";
 import { PluginSettings, ServiceResult } from "./types";
 
@@ -66,8 +66,10 @@ const createEmptyPage = async (
 
 		return { data: res.json, error: null };
 	} catch (error) {
-		new Notice(`network error ${error}`);
-		return { data: res, error };
+		return {
+			data: res,
+			error: Error(`Error creating empty notion page ${error}`),
+		};
 	}
 };
 
@@ -94,8 +96,10 @@ const addContentToPage = async (
 		});
 		return { data: res.json, error: null };
 	} catch (error) {
-		new Notice(`Error adding content to Notion page: ${error}`);
-		return { data: res, error };
+		return {
+			data: res,
+			error: Error(`Error adding content to Notion page: ${error}`),
+		};
 	}
 };
 
@@ -129,14 +133,17 @@ const clearPageContent = async (
 					},
 				});
 			}
-			new Notice("All content cleared from the Notion page.");
 		}
 
-		return { data: "Delete succeed", error: null };
+		return {
+			data: "Success! All content cleared from the Notion page.",
+			error: null,
+		};
 	} catch (error) {
-		console.error("Error clearing Notion page content:", error);
-		new Notice(`Error clearing content from Notion page: ${error}`);
-		return { data: null, error };
+		return {
+			data: null,
+			error: Error(`Error clearing content from Notion page: ${error}`),
+		};
 	}
 };
 

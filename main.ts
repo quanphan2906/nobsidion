@@ -25,10 +25,10 @@ import {
 	PluginSettings,
 	MarkdownWithFrontMatter,
 	ServiceResult,
-} from "lib/types";
-import { NobsidionSettingTab } from "lib/nobsidionSettingsTab";
-import { NoticeMessageConfig, getBasenameFromPath } from "lib/helper";
-import { uploadFile } from "lib";
+} from "service/types";
+import { NobsidionSettingTab } from "settingTab";
+import { NoticeMessageConfig, getBasenameFromPath } from "service/utils";
+import { uploadFile } from "service";
 
 // Define your default settings
 const DEFAULT_SETTINGS: PluginSettings = {

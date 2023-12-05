@@ -21,7 +21,7 @@
 
 import { PluginSettingTab, Setting, App } from "obsidian";
 import Nobsidion from "main";
-import { PluginSettings, StringKeys, BooleanKeys } from "./types";
+import { PluginSettings, StringKeys, BooleanKeys } from "./service/types";
 
 export class NobsidionSettingTab extends PluginSettingTab {
 	plugin: Nobsidion;

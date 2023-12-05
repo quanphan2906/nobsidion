@@ -7,7 +7,7 @@ import {
 	fromYamlFrontMatterToMarkdown,
 	getWikiLinkFromMarkdown,
 	replaceWikiWithHyperLink,
-} from "./helper";
+} from "./utils";
 
 export const uploadFile = async (
 	nobsidion: Nobsidion,

@@ -20,8 +20,8 @@
 
 import * as yaml from "yaml";
 import { TFile, addIcon } from "obsidian";
-import { NoticeMsg } from "./message";
-import { icons } from "./icon";
+import { NoticeMsg } from "../static/message";
+import { icons } from "../static/icon";
 
 /**
  *
