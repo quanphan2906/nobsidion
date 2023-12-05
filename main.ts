@@ -29,6 +29,7 @@ import {
 	getWikiLinkFromMarkdown,
 	prepareNotionPageAndUpdateMarkdown,
 	replaceWikiWithHyperLink,
+	getBasenameFromPath,
 } from "lib/helper";
 
 // Define your default settings
@@ -40,9 +41,10 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	allowTags: false,
 };
 
-export default class ObsidianSyncNotionPlugin extends Plugin {
+export default class Nobsidion extends Plugin {
 	settings: PluginSettings;
 	message: { [key: string]: string };
+	fileNameToFile: Map<string, TFile>;
 
 	constructor(app: App, manifest: PluginManifest) {
 		super(app, manifest);
@@ -53,12 +55,30 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	}
 
 	async onload() {
+		// Retrieve settings from settings tab
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
 			await this.loadData()
 		);
 
+		// Add commands to vault
+		this.addCustomCommands();
+
+		// Furnish the map
+		const markdownFiles = this.app.vault.getMarkdownFiles();
+		markdownFiles.forEach((file) => {
+			this.fileNameToFile.set(file.basename, file);
+		});
+
+		// Register events
+		this.registerCustomEvents();
+
+		// Add settings tab to plugin
+		this.addSettingTab(new SampleSettingTab(this.app, this));
+	}
+
+	addCustomCommands() {
 		this.addCommand({
 			id: "share-to-notion",
 			name: "Upload current note to Notion",
@@ -74,12 +94,35 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 				this.bulkUpload();
 			},
 		});
-
-		// Add settings tab to plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
 	}
 
-	onunload() {}
+	registerCustomEvents() {
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				if (file instanceof TFile) {
+					this.fileNameToFile.set(file.basename, file);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (file instanceof TFile) {
+					this.fileNameToFile.delete(file.basename);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				if (file instanceof TFile) {
+					const oldName = getBasenameFromPath(oldPath);
+					this.fileNameToFile.delete(oldName);
+					this.fileNameToFile.set(file.basename, file);
+				}
+			})
+		);
+	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
@@ -176,6 +219,8 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	async createEmptyMarkdownFile(pageName: string): Promise<TFile> {
 		const newFilePath = `/${pageName}.md`;
 		const newFile = await this.app.vault.create(newFilePath, "");
+		// file create handler will update fileNameToFile Map
+		// see registerCustomEvents
 		return newFile;
 	}
 
@@ -194,14 +239,23 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 	 *
 	 * @param markdown Original markdown content of an Obsidian markdown file
 	 * @returns Same markdown content, with wiki-link turned into hyperlink.
+	 *
+	 * 1. Retrieve all the wiki links from markdown
+	 * 2. See which wiki-link doesn't exist --> wikiLinkNotExist
+	 * 3. Create markdown files from all the links in wikiLinkNotExist
+	 * 4. Init notion page for all pages
+	 * 5.
 	 */
 	async convertObsidianLinks(markdown: string): Promise<string> {
 		const links = getWikiLinkFromMarkdown(markdown);
-		const markdownFiles = this.app.vault.getMarkdownFiles();
 		let updatedMarkdown = markdown;
 
 		for (const pageName of links) {
-			let file = markdownFiles.find((f) => f.basename === pageName);
+			let file: TFile | undefined;
+
+			if (pageName in this.fileNameToFile) {
+				file = this.fileNameToFile.get(pageName);
+			}
 
 			// if file doesn't exist, create it
 			if (!file) file = await this.createEmptyMarkdownFile(pageName);

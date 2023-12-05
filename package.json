@@ -1,5 +1,5 @@
 {
-	"name": "obsidian-notion",
+	"name": "Nobsidion",
 	"version": "1.0.0",
 	"description": "Syncing Obsidian to Notion, and hopefully vice versa",
 	"main": "main.js",
@@ -10,7 +10,6 @@
 	},
 	"keywords": [],
 	"author": "",
-	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
 		"@types/yaml-front-matter": "^4.1.3",

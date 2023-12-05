@@ -141,3 +141,11 @@ export const getWikiNotExist = (
 	}
 	return wikinotExist;
 };
+
+export const getBasenameFromPath = (filePath: string): string => {
+	// Extract the file name from the full path
+	const fileName = filePath.split("/").pop();
+
+	// Remove the file extension and return the base name
+	return fileName ? fileName.replace(/\.[^/.]+$/, "") : "";
+};
