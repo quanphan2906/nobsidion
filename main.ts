@@ -50,6 +50,7 @@ export default class Nobsidion extends Plugin {
 		this.message = NoticeMessageConfig(
 			window.localStorage.getItem("language") || "en"
 		);
+		this.fileNameToFile = new Map<string, TFile>();
 	}
 
 	async onload() {

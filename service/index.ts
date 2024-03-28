@@ -38,19 +38,22 @@ export const initializeNotionPage = async (
 	file: TFile
 ): Promise<MarkdownWithFrontMatter> => {
 	const contentWithFrontMatter = await nobsidion.getContent(file);
-
 	const settings = nobsidion.settings;
+	const notionWorkspaceID = settings.notionWorkspaceID;
+
+	console.log(file.basename);
+	console.log(contentWithFrontMatter);
 
 	if (!contentWithFrontMatter.notionPageId) {
 		const { data, error } = await notion.createEmptyPage(
-			nobsidion.settings,
+			settings,
 			file.basename
 		);
 		const { url: rawNotionPageUrl, id: notionPageId } = data;
 
 		const notionPageUrl = updateNotionPageUrlWithWorkspaceId(
 			rawNotionPageUrl,
-			settings.notionWorkspaceID
+			notionWorkspaceID
 		);
 
 		contentWithFrontMatter.notionPageId = notionPageId;
@@ -78,7 +81,7 @@ export const initializeNotionPage = async (
  * @param markdown Original markdown content of an Obsidian markdown file
  * @returns Same markdown content, with wiki-link turned into hyperlink.
  */
-const convertObsidianLinks = async (
+export const convertObsidianLinks = async (
 	nobsidion: Nobsidion,
 	markdown: string
 ): Promise<string> => {
@@ -88,7 +91,7 @@ const convertObsidianLinks = async (
 	for (const pageName of links) {
 		let file: TFile | undefined;
 
-		if (pageName in nobsidion.fileNameToFile) {
+		if (nobsidion.fileNameToFile.has(pageName)) {
 			file = nobsidion.fileNameToFile.get(pageName);
 		}
 

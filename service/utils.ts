@@ -19,7 +19,7 @@
 */
 
 import * as yaml from "yaml";
-import { TFile, addIcon } from "obsidian";
+import { addIcon } from "obsidian";
 import { NoticeMsg } from "../static/message";
 import { icons } from "../static/icon";
 
@@ -108,18 +108,6 @@ export const replaceWikiWithHyperLink = (
 		),
 		`[${hyperLinkName}](${hyperlink})`
 	);
-};
-
-export const getWikiNotExist = (
-	wikis: Set<string>,
-	markdownFiles: Array<TFile>
-): Set<string> => {
-	const wikinotExist = new Set<string>();
-	for (const pageName of wikis) {
-		const file = markdownFiles.find((f) => f.basename === pageName);
-		if (!file) wikinotExist.add(pageName);
-	}
-	return wikinotExist;
 };
 
 export const getBasenameFromPath = (filePath: string): string => {
