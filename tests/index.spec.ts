@@ -1,41 +1,36 @@
-import Nobsidion from "main";
+jest.mock("obsidian");
+jest.mock("../service/notion");
+
 import {
 	// uploadFile,
 	initializeNotionPage,
 	// convertObsidianLinks,
 } from "../service/index";
 
+import Nobsidion from "main";
+import { TFile, App, PluginManifest } from "obsidian";
+
+// The line belows allow me to access and mock other functions in service/index while
+// I am testing one function. Don't delete it.
 // import * as service from "../service/index";
 
-// import notion from "../service/notion";
-
-import {
-	NobsidionMockType,
-	TFileMockType,
-	nobsidionDefaultMock,
-	fileDefaultMock,
-} from "./mocks";
-import { TFile } from "obsidian";
-
-// jest.mock("../service/notion");
-// const mockNotion = jest.mocked(notion);
-
 describe("uploadFile", () => {
-	let nobsidionMock: NobsidionMockType;
-	let fileMock: TFileMockType;
+	let nobsidionMock: Nobsidion; // can I just use Nobsidion type here?
+	let fileMock: TFile;
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-		nobsidionMock = nobsidionDefaultMock;
-		fileMock = fileDefaultMock;
+		nobsidionMock = new Nobsidion(new App(), {} as PluginManifest);
+		fileMock = new TFile();
 	});
 
 	it("test initializeNotionPage using file with notionPageId", async () => {
 		await initializeNotionPage(
 			nobsidionMock as unknown as Nobsidion,
-			fileMock as unknown as TFile
+			fileMock
 		);
 
 		expect(nobsidionMock.getContent).toHaveBeenCalled();
+		expect(fileMock.basename).toBe("New document");
 	});
 });
