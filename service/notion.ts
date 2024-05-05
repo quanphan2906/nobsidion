@@ -82,6 +82,7 @@ const addContentToPage = async (
 	const notionAPIToken = settings.notionAPIToken;
 
 	const blocks = markdownToBlocks(content);
+	console.log(blocks);
 
 	try {
 		res = await requestUrl({
@@ -98,7 +99,9 @@ const addContentToPage = async (
 	} catch (error) {
 		return {
 			data: res,
-			error: Error(`Error adding content to Notion page: ${error}`),
+			error: Error(
+				`Error adding content to Notion page: ${error.message}`
+			),
 		};
 	}
 };

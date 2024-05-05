@@ -150,7 +150,7 @@ export default class Nobsidion extends Plugin {
 
 		const markdownFiles = this.app.vault.getMarkdownFiles();
 		for (const file of markdownFiles) {
-			this.uploadFile(file);
+			await this.uploadFile(file);
 		}
 
 		new Notice(this.message["all-sync-success"]);
