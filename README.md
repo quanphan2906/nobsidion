@@ -27,13 +27,13 @@ Here are the immediate tasks I am working on. Some of the tasks will seem trivia
 
 **Future tasks**:
 
--   [] Convert wiki-links into Notion's internal page mentions.
--   [] Upload the entire vault in parallel.
--   [] Enable item nesting more than two levels.
+-   [ ] Convert wiki-links into Notion's internal page mentions.
+-   [ ] Upload the entire vault in parallel.
+-   [ ] Enable item nesting more than two levels.
 
 ### Update an Obsidian note based on a Notion page
 
--   [] Enable the users to view the Notion page from Obsidian. Keep the Obsidian note up-to-date with Notion page.
+-   [ ] Enable the users to view the Notion page from Obsidian. Keep the Obsidian note up-to-date with Notion page.
 
 **Limitations**:
 
@@ -54,7 +54,7 @@ This project is a fork of [Obsidian to Notion](https://github.com/EasyChris/obsi
 
 ## Contributing
 
-Contributions are welcome! If you have a suggestion, bug report, or feature request, please open an issue, submit a pull request, or ping me on LinkedIn or via email (which you can find on my profile).
+Contributions are welcome! If you have a suggestion, bug report, or feature request, please open an issue, submit a pull request, or ping me on LinkedIn or email (which you can find on my profile).
 
 ## License
 
